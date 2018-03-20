@@ -21,172 +21,54 @@ export type QueryLogSpecs = {
 
   pull(): QueryLogItem[]
   pull(group: string): QueryLogItem[]
-  pull(since: Moment.Moment): QueryLogItem[]
-  pull(transform: QueryLogTransform): QueryLogItem[]
   pull(group: string, since: Moment.Moment): QueryLogItem[]
+  pull(group: string, since: Moment.Moment, until: Moment.Moment): QueryLogItem[]
+  pull(group: string, since: Moment.Moment, until: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
+  pull(group: string, since: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
   pull(group: string, transform: QueryLogTransform): QueryLogItem[]
+  pull(since: Moment.Moment): QueryLogItem[]
   pull(since: Moment.Moment, group: string): QueryLogItem[]
   pull(since: Moment.Moment, until: Moment.Moment): QueryLogItem[]
-  pull(since: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
-  pull(transform: QueryLogTransform, since: Moment.Moment): QueryLogItem[]
-  pull(transform: QueryLogTransform, group: string): QueryLogItem[]
-  pull(group: string, since: Moment.Moment, until: Moment.Moment): QueryLogItem[]
-  pull(group: string, since: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
   pull(since: Moment.Moment, until: Moment.Moment, group: string): QueryLogItem[]
-  pull(since: Moment.Moment, transform: QueryLogTransform, group: string): QueryLogItem[]
-  pull(group: string, since: Moment.Moment, until: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
   pull(since: Moment.Moment, until: Moment.Moment, transform: QueryLogTransform, group: string): QueryLogItem[]
+  pull(since: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
+  pull(since: Moment.Moment, transform: QueryLogTransform, group: string): QueryLogItem[]
+  pull(transform: QueryLogTransform): QueryLogItem[]
+  pull(transform: QueryLogTransform, group: string): QueryLogItem[]
+  pull(transform: QueryLogTransform, since: Moment.Moment): QueryLogItem[]
+  pull(transform: QueryLogTransform, since: Moment.Moment, group: string): QueryLogItem[]
   pull(transform: QueryLogTransform, since: Moment.Moment, until: Moment.Moment, group: string): QueryLogItem[]
 }
 
-function parse_pull_arguments_1(args: ArrayLike<any>) {
-  const result = {
-    group: undefined,
-    since: undefined,
-    until: undefined,
-    transform: undefined
-  }
-
-  // pull(since: Moment.Moment): QueryLogItem[]
-  if (Moment.isMoment(args[0])) {
-    result.since = args[0]
-    return result
-  }
-  // pull(transform: QueryLogTransform): QueryLogItem[]
-  if (isFunction(args[0])) {
-    result.transform = args[0]
-    return result
-  }
-  // pull(group: string): QueryLogItem[]
-  if (isString(args[0])) {
-    result.group = args[0]
-    return result
-  }
-
-  return result
+function assign_if_last_argument_is(type: string, args: ArrayLike<any>) {
+  return typeof args[args.length - 1] === type ? args[args.length - 1] : undefined
 }
 
-function parse_pull_arguments_2(args: ArrayLike<any>) {
-  const result = {
-    group: undefined,
-    since: undefined,
-    until: undefined,
-    transform: undefined
+function parse_pull_arguments_starts_with_string(args: ArrayLike<any>) {
+  return {
+    group: args[0],
+    since: args[1] && Moment.isMoment(args[1]) ? args[1] : undefined,
+    until: args[2] && Moment.isMoment(args[2]) ? args[2] : undefined,
+    transform: assign_if_last_argument_is('function', args)
   }
-
-  // pull(group: string, since: Moment.Moment): QueryLogItem[]
-  if (isString(args[0]) && Moment.isMoment(args[1])) {
-    result.group = args[0]
-    result.since = args[1]
-    return result
-  }
-  // pull(group: string, transform: QueryLogTransform): QueryLogItem[]
-  if (isString(args[0]) && isFunction(args[1])) {
-    result.group = args[0]
-    result.transform = args[1]
-    return result
-  }
-  // pull(since: Moment.Moment, group: string): QueryLogItem[]
-  if (Moment.isMoment(args[0]) && isString(args[1])) {
-    result.since = args[0]
-    result.group = args[1]
-    return result
-  }
-  // pull(since: Moment.Moment, until: Moment.Moment): QueryLogItem[]
-  if (Moment.isMoment(args[0]) && Moment.isMoment(args[1])) {
-    result.since = args[0]
-    result.until = args[1]
-    return result
-  }
-  // pull(since: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
-  if (Moment.isMoment(args[0]) && isFunction(args[1])) {
-    result.since = args[0]
-    result.transform = args[1]
-    return result
-  }
-  // pull(transform: QueryLogTransform, since: Moment.Moment): QueryLogItem[]
-  if (isFunction(args[0]) && Moment.isMoment(args[1])) {
-    result.transform = args[0]
-    result.since = args[1]
-    return result
-  }
-  // pull(transform: QueryLogTransform, group: string): QueryLogItem[]
-  if (isFunction(args[0]) && isString(args[1])) {
-    result.transform = args[0]
-    result.group = args[1]
-    return result
-  }
-
-  return result
 }
 
-function parse_pull_arguments_3(args: ArrayLike<any>) {
-  const result = {
-    group: undefined,
-    since: undefined,
-    until: undefined,
-    transform: undefined
+function parse_pull_arguments_starts_with_moment(args: ArrayLike<any>) {
+  return {
+    since: args[0],
+    until: args[1] && Moment.isMoment(args[1]) ? args[1] : undefined,
+    group: assign_if_last_argument_is('string', args),
+    transform: args[1] && isFunction(args[1]) ? args[1] : args[2] && isFunction(args[2]) ? args[2] : undefined
   }
-
-  // pull(group: string, since: Moment.Moment, until: Moment.Moment): QueryLogItem[]
-  if (isString(args[0]) && Moment.isMoment(args[1]) && Moment.isMoment(args[2])) {
-    result.group = args[0]
-    result.since = args[1]
-    result.until = args[2]
-  }
-  // pull(group: string, since: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
-  if (isString(args[0]) && Moment.isMoment(args[1]) && isFunction(args[2])) {
-    result.group = args[0]
-    result.since = args[1]
-    result.transform = args[2]
-  }
-  // pull(since: Moment.Moment, until: Moment.Moment, group: string): QueryLogItem[]
-  if (Moment.isMoment(args[0]) && Moment.isMoment(args[1]) && isString(args[2])) {
-    result.since = args[0]
-    result.until = args[1]
-    result.group = args[2]
-  }
-  // pull(since: Moment.Moment, transform: QueryLogTransform, group: string): QueryLogItem[]
-  if (Moment.isMoment(args[0]) && isFunction(args[1]) && isString(args[2])) {
-    result.since = args[0]
-    result.transform = args[1]
-    result.group = args[2]
-  }
-
-  return result
 }
 
-function parse_pull_arguments_4(args: ArrayLike<any>) {
-  const result = {
-    group: undefined,
-    since: undefined,
-    until: undefined,
-    transform: undefined
+function parse_pull_arguments_starts_with_function(args: ArrayLike<any>) {
+  return {
+    transform: args[0],
+    group: assign_if_last_argument_is('string', args),
+    since: args[1] && Moment.isMoment(args[1]) ? args[1] : undefined,
+    until: args[2] && Moment.isMoment(args[2]) ? args[2] : undefined
   }
-
-  // pull(group: string, since: Moment.Moment, until: Moment.Moment, transform: QueryLogTransform): QueryLogItem[]
-  if (isString(args[0]) && Moment.isMoment(args[1]) && Moment.isMoment(args[2]) && isFunction(args[3])) {
-    result.group = args[0]
-    result.since = args[1]
-    result.until = args[2]
-    result.transform = args[3]
-  }
-  // pull(since: Moment.Moment, until: Moment.Moment, transform: QueryLogTransform, group: string): QueryLogItem[]
-  if (Moment.isMoment(args[0]) && Moment.isMoment(args[1]) && isFunction(args[2]) && isString(args[3])) {
-    result.since = args[0]
-    result.until = args[1]
-    result.transform = args[2]
-    result.group = args[3]
-  }
-  // pull(transform: QueryLogTransform, since: Moment.Moment, until: Moment.Moment, group: string): QueryLogItem[]
-  if (isFunction(args[0]) && Moment.isMoment(args[1]) && Moment.isMoment(args[2]) && isString(args[3])) {
-    result.transform = args[0]
-    result.since = args[1]
-    result.until = args[2]
-    result.group = args[3]
-  }
-
-  return result
 }
 
 const implementation: any = {
@@ -234,26 +116,16 @@ const implementation: any = {
   },
 
   parsePullArguments(args: ArrayLike<any>): any {
-    const result = {
-      group: undefined,
-      since: undefined,
-      until: undefined,
-      transform: undefined
+    if (isString(args[0])) {
+      return parse_pull_arguments_starts_with_string(args)
     }
-    switch (args.length) {
-      case 1:
-        return parse_pull_arguments_1(args)
-      case 2:
-        return parse_pull_arguments_2(args)
-      case 3:
-        return parse_pull_arguments_3(args)
-      case 4:
-        return parse_pull_arguments_4(args)
-      default:
-        break
+    if (Moment.isMoment(args[0])) {
+      return parse_pull_arguments_starts_with_moment(args)
     }
-    // pull(): QueryLogItem[]
-    return result
+    if (isFunction(args[0])) {
+      return parse_pull_arguments_starts_with_function(args)
+    }
+    return {}
   },
 
   pull(): any {
@@ -263,28 +135,23 @@ const implementation: any = {
     const pullingPipe = this.circle
     this.circle = pullingPipe === 'flip' ? 'flop' : 'flip'
     const args = this.parsePullArguments(arguments)
-    const group: string | undefined = args['group']
-    const since: Moment.Moment | undefined = args['since']
-    const until: Moment.Moment | undefined = args['until']
-    const transform: QueryLogTransform | undefined = args['transform']
     const result: QueryLogItem[] = []
     this[pullingPipe].forEach((item: QueryLogItem) => {
       let match = true
-      if (group) {
-        match = item.group === group
+      if (args['group']) {
+        match = item.group === args['group']
       }
-      if (match && since) {
-        match = item.when.isSameOrAfter(since)
+      if (match && args['since']) {
+        match = item.when.isSameOrAfter(args['since'])
       }
-      if (match && until) {
-        match = item.when.isSameOrBefore(until)
+      if (match && args['until']) {
+        match = item.when.isSameOrBefore(args['until'])
       }
       if (match) {
-        result.push(transform ? transform(item) : item)
+        result.push(args['transform'] ? args['transform'](item) : item)
         return
       }
-      // put not matched item back to the other pipe
-      this[this.circle].push(item)
+      this[this.circle].push(item) // put not matched item back to the other pipe
     })
     this[pullingPipe] = []
     return result.sort(function(a: QueryLogItem, b: QueryLogItem) {
