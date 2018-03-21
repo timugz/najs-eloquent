@@ -57,7 +57,7 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
     return this.mongooseQuery
   }
 
-  protected passDataToMongooseQuery(query: MongooseQuery<T>, logger?: MongooseQueryLog) {
+  protected passFieldsToQuery(query: MongooseQuery<T>, logger?: MongooseQueryLog) {
     if (!isEmpty(this.selectedFields)) {
       const selectParams = this.selectedFields.join(' ')
       query.select(selectParams)
@@ -72,12 +72,18 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
         logger.raw(`.distinct("${distinctParams}")`)
       }
     }
+  }
+
+  protected passLimitToQuery(query: MongooseQuery<T>, logger?: MongooseQueryLog) {
     if (this.limitNumber) {
       query.limit(this.limitNumber)
       if (logger) {
         logger.raw(`.limit(${this.limitNumber})`)
       }
     }
+  }
+
+  protected passOrderingToQuery(query: MongooseQuery<T>, logger?: MongooseQueryLog) {
     if (this.ordering && !isEmpty(this.ordering)) {
       const sort: Object = Object.keys(this.ordering).reduce((memo, key) => {
         memo[key] = this.ordering[key] === 'asc' ? 1 : -1
@@ -88,6 +94,12 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
         logger.raw('.sort(', sort, ')')
       }
     }
+  }
+
+  protected passDataToMongooseQuery(query: MongooseQuery<T>, logger?: MongooseQueryLog) {
+    this.passFieldsToQuery(query)
+    this.passLimitToQuery(query)
+    this.passOrderingToQuery(query)
     return query
   }
 
