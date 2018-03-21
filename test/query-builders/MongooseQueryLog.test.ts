@@ -63,7 +63,10 @@ describe('MongooseQueryLog', function() {
   describe('.find()', function() {
     it('should work', function() {
       const builder = new MongooseQueryBuilder('User')
-      builder.where('first_name', 'test').find()
+      builder
+        .distinct('first_name')
+        .where('first_name', 'test')
+        .find()
       const log = QueryLog.pull()[0]
       console.log(log)
     })
@@ -72,7 +75,10 @@ describe('MongooseQueryLog', function() {
   describe('.pluck()', function() {
     it('should work', function() {
       const builder = new MongooseQueryBuilder('User')
-      builder.where('first_name', '!=', 'test').pluck('first_name')
+      builder
+        .limit(10)
+        .where('first_name', '!=', 'test')
+        .pluck('first_name')
       const log = QueryLog.pull()[0]
       console.log(log)
     })

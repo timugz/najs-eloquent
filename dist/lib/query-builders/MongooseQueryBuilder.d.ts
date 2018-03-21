@@ -1,3 +1,4 @@
+import { MongooseQueryLog } from './MongooseQueryLog';
 import { MongooseQuery } from './MongooseQueryBuilder';
 import { QueryBuilder, QueryBuilderSoftDelete } from './QueryBuilder';
 import { IBasicQueryGrammar } from '../interfaces/IBasicQueryGrammar';
@@ -16,12 +17,12 @@ export declare class MongooseQueryBuilder<T = {}> extends QueryBuilder implement
     constructor(modelName: string, softDelete: QueryBuilderSoftDelete);
     constructor(modelName: string, softDelete: QueryBuilderSoftDelete | undefined, primaryKey: string);
     protected getMongooseProvider(): IMongooseProvider;
-    protected getQuery(isFindOne?: boolean, rawLogs?: string[]): MongooseQuery<T>;
-    protected passDataToMongooseQuery(query: MongooseQuery<T>, rawLogs?: string[]): MongooseQuery<T>;
+    protected getQuery(isFindOne?: boolean, logger?: MongooseQueryLog): MongooseQuery<T>;
+    protected passDataToMongooseQuery(query: MongooseQuery<T>, logger?: MongooseQueryLog): MongooseQuery<T>;
+    protected createQuery(findOne: boolean, logger?: MongooseQueryLog): DocumentQuery<(Document & T)[] | null, Document & T>;
     getPrimaryKey(): string;
     native(handler: (native: Model<Document & T> | MongooseQuery<T>) => MongooseQuery<T>): IQueryFetchResult<T>;
     toObject(): Object;
-    protected logQuery(action: string, raw: string): void;
     protected getFieldByName(name: any): any;
     get(): Promise<Collection<any>>;
     all(): Promise<Collection<any>>;

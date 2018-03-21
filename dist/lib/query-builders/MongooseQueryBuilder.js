@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-const QueryLog_1 = require("./QueryLog");
+const MongooseQueryLog_1 = require("./MongooseQueryLog");
 const QueryBuilder_1 = require("./QueryBuilder");
 const MongodbConditionConverter_1 = require("./MongodbConditionConverter");
 const najs_binding_1 = require("najs-binding");
@@ -20,36 +20,39 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
     getMongooseProvider() {
         return najs_binding_1.make('MongooseProvider');
     }
-    getQuery(isFindOne = false, rawLogs = []) {
+    getQuery(isFindOne = false, logger) {
         if (!this.hasMongooseQuery) {
             const conditions = new MongodbConditionConverter_1.MongodbConditionConverter(this.getConditions()).convert();
-            rawLogs.push(this.mongooseModel.modelName);
-            if (isFindOne) {
-                this.mongooseQuery = this.mongooseModel.findOne(conditions);
-                rawLogs.push(`.findOne(${JSON.stringify(conditions)})`);
-            }
-            else {
-                this.mongooseQuery = this.mongooseModel.find(conditions);
-                rawLogs.push(`.find(${JSON.stringify(conditions)})`);
+            this.mongooseQuery = isFindOne
+                ? this.mongooseModel.findOne(conditions)
+                : (this.mongooseQuery = this.mongooseModel.find(conditions));
+            if (logger) {
+                logger.raw(this.mongooseModel.modelName).raw(isFindOne ? '.findOne(' : '.find(', conditions, ')');
             }
             this.hasMongooseQuery = true;
         }
         return this.mongooseQuery;
     }
-    passDataToMongooseQuery(query, rawLogs = []) {
+    passDataToMongooseQuery(query, logger) {
         if (!lodash_1.isEmpty(this.selectedFields)) {
             const selectParams = this.selectedFields.join(' ');
             query.select(selectParams);
-            rawLogs.push(`.select("${selectParams}")`);
+            if (logger) {
+                logger.raw(`.select("${selectParams}")`);
+            }
         }
         if (!lodash_1.isEmpty(this.distinctFields)) {
             const distinctParams = this.distinctFields.join(' ');
             query.distinct(distinctParams);
-            rawLogs.push(`.distinct("${distinctParams}")`);
+            if (logger) {
+                logger.raw(`.distinct("${distinctParams}")`);
+            }
         }
         if (this.limitNumber) {
             query.limit(this.limitNumber);
-            rawLogs.push(`.limit(${this.limitNumber})`);
+            if (logger) {
+                logger.raw(`.limit(${this.limitNumber})`);
+            }
         }
         if (this.ordering && !lodash_1.isEmpty(this.ordering)) {
             const sort = Object.keys(this.ordering).reduce((memo, key) => {
@@ -57,15 +60,20 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
                 return memo;
             }, {});
             query.sort(sort);
-            rawLogs.push(`.sort(${JSON.stringify(sort)})`);
+            if (logger) {
+                logger.raw('.sort(', sort, ')');
+            }
         }
         return query;
+    }
+    createQuery(findOne, logger) {
+        return this.passDataToMongooseQuery(this.getQuery(findOne, logger), logger);
     }
     getPrimaryKey() {
         return this.primaryKey;
     }
     native(handler) {
-        this.mongooseQuery = handler.call(undefined, this.isUsed ? this.passDataToMongooseQuery(this.getQuery()) : this.mongooseModel);
+        this.mongooseQuery = handler.call(undefined, this.isUsed ? this.createQuery(false) : this.mongooseModel);
         this.hasMongooseQuery = true;
         return this;
     }
@@ -80,13 +88,6 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
             conditions: !lodash_1.isEmpty(conditions) ? conditions : undefined
         };
     }
-    logQuery(action, raw) {
-        const data = this.toObject();
-        data['builder'] = MongooseQueryBuilder.className;
-        data['action'] = action;
-        data['raw'] = raw;
-        QueryLog_1.QueryLog.push(data, this.queryLogGroup);
-    }
     getFieldByName(name) {
         if (name === 'id') {
             return '_id';
@@ -95,10 +96,12 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
     }
     // -------------------------------------------------------------------------------------------------------------------
     async get() {
-        const rawLogs = [];
-        const query = this.passDataToMongooseQuery(this.getQuery(false, rawLogs), rawLogs);
-        rawLogs.push('.exec()');
-        this.logQuery('get', rawLogs.join(''));
+        const logger = MongooseQueryLog_1.MongooseQueryLog.create(this);
+        const query = this.createQuery(false, logger);
+        logger
+            .raw('.exec()')
+            .action('get')
+            .end();
         const result = await query.exec();
         if (result && !lodash_1.isEmpty(result)) {
             const eloquent = najs_binding_1.make(this.mongooseModel.modelName);
@@ -110,15 +113,17 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
         return this.get();
     }
     async find() {
-        const rawLogs = [];
-        const query = this.passDataToMongooseQuery(this.getQuery(true, rawLogs), rawLogs);
+        const logger = MongooseQueryLog_1.MongooseQueryLog.create(this);
+        const query = this.passDataToMongooseQuery(this.getQuery(true, logger), logger);
         // change mongoose query operator from find to findOne if needed
         if (query['op'] === 'find') {
             query.findOne();
-            rawLogs.push('.fineOne()');
+            logger.raw('.fineOne()');
         }
-        rawLogs.push('.exec()');
-        this.logQuery('find', rawLogs.join(''));
+        logger
+            .raw('.exec()')
+            .action('find')
+            .end();
         const result = await query.exec();
         if (result) {
             return najs_binding_1.make(this.mongooseModel.modelName).newInstance(result);
@@ -140,13 +145,15 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
         return this.find();
     }
     async pluck(value, key) {
-        const rawLogs = [];
+        const logger = MongooseQueryLog_1.MongooseQueryLog.create(this);
         this.selectedFields = [];
         const keyName = key ? key : this.primaryKey;
         this.select(value, keyName);
-        const query = this.passDataToMongooseQuery(this.getQuery(false, rawLogs), rawLogs);
-        rawLogs.push('.exec()');
-        this.logQuery('pluck', rawLogs.join(''));
+        const query = this.createQuery(false, logger);
+        logger
+            .raw('.exec()')
+            .action('pluck')
+            .end();
         const result = await query.exec();
         if (result && !lodash_1.isEmpty(result)) {
             return result.reduce(function (memo, item) {
@@ -157,25 +164,25 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
         return {};
     }
     async count() {
-        const rawLogs = [];
+        const logger = MongooseQueryLog_1.MongooseQueryLog.create(this).action('count');
         this.selectedFields = [];
         this.select(this.primaryKey);
-        const query = this.passDataToMongooseQuery(this.getQuery(false, rawLogs), rawLogs);
-        rawLogs.push('.count().exec()');
-        this.logQuery('count', rawLogs.join(''));
+        const query = this.createQuery(false, logger);
+        logger.raw('.count().exec()').end();
         const result = await query.count().exec();
         return result;
     }
     async update(data) {
-        const rawLogs = [];
         const conditions = new MongodbConditionConverter_1.MongodbConditionConverter(this.getConditions()).convert();
         const query = this.mongooseModel.update(conditions, data, {
             multi: true
         });
-        rawLogs.push(this.mongooseModel.modelName);
-        rawLogs.push(`.update(${JSON.stringify(conditions)}, ${JSON.stringify(data)}, {multi: true})`);
-        rawLogs.push('.exec()');
-        this.logQuery('update', rawLogs.join(''));
+        MongooseQueryLog_1.MongooseQueryLog.create(this)
+            .action('update')
+            .raw(this.mongooseModel.modelName)
+            .raw(`.update(${JSON.stringify(conditions)}, ${JSON.stringify(data)}, {multi: true})`)
+            .raw('.exec()')
+            .end();
         return query.exec();
     }
     async delete() {
@@ -183,11 +190,10 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
         if (conditions === false) {
             return { n: 0, ok: 1 };
         }
-        const rawLogs = [];
-        rawLogs.push(this.mongooseModel.modelName);
-        rawLogs.push(`.remove(${JSON.stringify(conditions)})`);
-        rawLogs.push('.exec()');
-        this.logQuery('delete', rawLogs.join(''));
+        MongooseQueryLog_1.MongooseQueryLog.create(this)
+            .raw(this.mongooseModel.modelName)
+            .raw('.remove(', conditions, ')', '.exec()')
+            .end();
         const query = this.mongooseModel.remove(conditions);
         return query.exec();
     }
@@ -199,27 +205,25 @@ class MongooseQueryBuilder extends QueryBuilder_1.QueryBuilder {
         if (conditions === false) {
             return { n: 0, nModified: 0, ok: 1 };
         }
-        const rawLogs = [];
         const updateData = {
             $set: { [this.softDelete.deletedAt]: this.getNullValue(this.softDelete.deletedAt) }
         };
         const query = this.mongooseModel.update(conditions, updateData, { multi: true });
-        rawLogs.push(this.mongooseModel.modelName);
-        rawLogs.push('.update(');
-        rawLogs.push(JSON.stringify(conditions));
-        rawLogs.push(', ');
-        rawLogs.push(JSON.stringify(updateData));
-        rawLogs.push(', ');
-        rawLogs.push(JSON.stringify({ multi: true }));
-        rawLogs.push(').exec()');
-        this.logQuery('restore', rawLogs.join(''));
+        MongooseQueryLog_1.MongooseQueryLog.create(this)
+            .action('restore')
+            .raw(this.mongooseModel.modelName)
+            .raw('.update(', conditions, ',', updateData, ', ', { multi: true }, ')')
+            .raw('.exec()')
+            .end();
         return query.exec();
     }
     async execute() {
-        const rawLogs = [];
-        const query = this.getQuery(false, rawLogs);
-        rawLogs.push('.exec()');
-        this.logQuery('execute', rawLogs.join(''));
+        const logger = MongooseQueryLog_1.MongooseQueryLog.create(this);
+        const query = this.getQuery(false, logger);
+        logger
+            .raw('.exec()')
+            .action('execute')
+            .end();
         return query.exec();
     }
     isNotUsedOrEmptyCondition() {

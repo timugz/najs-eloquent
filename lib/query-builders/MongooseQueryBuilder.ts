@@ -1,4 +1,4 @@
-import { QueryLog } from './QueryLog'
+import { MongooseQueryLog } from './MongooseQueryLog'
 import { MongooseQuery } from './MongooseQueryBuilder'
 import { QueryBuilder, QueryBuilderSoftDelete } from './QueryBuilder'
 import { MongodbConditionConverter } from './MongodbConditionConverter'
@@ -42,36 +42,41 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
     return make<IMongooseProvider>('MongooseProvider')
   }
 
-  protected getQuery(isFindOne: boolean = false, rawLogs: string[] = []): MongooseQuery<T> {
+  protected getQuery(isFindOne: boolean = false, logger?: MongooseQueryLog): MongooseQuery<T> {
     if (!this.hasMongooseQuery) {
       const conditions = new MongodbConditionConverter(this.getConditions()).convert()
-      rawLogs.push(this.mongooseModel.modelName)
-      if (isFindOne) {
-        this.mongooseQuery = this.mongooseModel.findOne(conditions)
-        rawLogs.push(`.findOne(${JSON.stringify(conditions)})`)
-      } else {
-        this.mongooseQuery = this.mongooseModel.find(conditions)
-        rawLogs.push(`.find(${JSON.stringify(conditions)})`)
+      this.mongooseQuery = isFindOne
+        ? this.mongooseModel.findOne(conditions)
+        : (this.mongooseQuery = this.mongooseModel.find(conditions))
+
+      if (logger) {
+        logger.raw(this.mongooseModel.modelName).raw(isFindOne ? '.findOne(' : '.find(', conditions, ')')
       }
       this.hasMongooseQuery = true
     }
     return this.mongooseQuery
   }
 
-  protected passDataToMongooseQuery(query: MongooseQuery<T>, rawLogs: string[] = []) {
+  protected passDataToMongooseQuery(query: MongooseQuery<T>, logger?: MongooseQueryLog) {
     if (!isEmpty(this.selectedFields)) {
       const selectParams = this.selectedFields.join(' ')
       query.select(selectParams)
-      rawLogs.push(`.select("${selectParams}")`)
+      if (logger) {
+        logger.raw(`.select("${selectParams}")`)
+      }
     }
     if (!isEmpty(this.distinctFields)) {
       const distinctParams = this.distinctFields.join(' ')
       query.distinct(distinctParams)
-      rawLogs.push(`.distinct("${distinctParams}")`)
+      if (logger) {
+        logger.raw(`.distinct("${distinctParams}")`)
+      }
     }
     if (this.limitNumber) {
       query.limit(this.limitNumber)
-      rawLogs.push(`.limit(${this.limitNumber})`)
+      if (logger) {
+        logger.raw(`.limit(${this.limitNumber})`)
+      }
     }
     if (this.ordering && !isEmpty(this.ordering)) {
       const sort: Object = Object.keys(this.ordering).reduce((memo, key) => {
@@ -79,9 +84,18 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
         return memo
       }, {})
       query.sort(sort)
-      rawLogs.push(`.sort(${JSON.stringify(sort)})`)
+      if (logger) {
+        logger.raw('.sort(', sort, ')')
+      }
     }
     return query
+  }
+
+  protected createQuery(findOne: boolean, logger?: MongooseQueryLog) {
+    return this.passDataToMongooseQuery(this.getQuery(findOne, logger), logger) as DocumentQuery<
+      (Document & T)[] | null,
+      Document & T
+    >
   }
 
   getPrimaryKey(): string {
@@ -89,10 +103,7 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
   }
 
   native(handler: (native: Model<Document & T> | MongooseQuery<T>) => MongooseQuery<T>): IQueryFetchResult<T> {
-    this.mongooseQuery = handler.call(
-      undefined,
-      this.isUsed ? this.passDataToMongooseQuery(this.getQuery()) : this.mongooseModel
-    )
+    this.mongooseQuery = handler.call(undefined, this.isUsed ? this.createQuery(false) : this.mongooseModel)
     this.hasMongooseQuery = true
     return this
   }
@@ -109,14 +120,6 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
     }
   }
 
-  protected logQuery(action: string, raw: string) {
-    const data = this.toObject()
-    data['builder'] = MongooseQueryBuilder.className
-    data['action'] = action
-    data['raw'] = raw
-    QueryLog.push(data, this.queryLogGroup)
-  }
-
   protected getFieldByName(name: any) {
     if (name === 'id') {
       return '_id'
@@ -127,13 +130,12 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
   // -------------------------------------------------------------------------------------------------------------------
 
   async get(): Promise<Collection<any>> {
-    const rawLogs: string[] = []
-    const query = this.passDataToMongooseQuery(this.getQuery(false, rawLogs), rawLogs) as DocumentQuery<
-      (Document & T)[] | null,
-      Document & T
-    >
-    rawLogs.push('.exec()')
-    this.logQuery('get', rawLogs.join(''))
+    const logger = MongooseQueryLog.create(this)
+    const query = this.createQuery(false, logger)
+    logger
+      .raw('.exec()')
+      .action('get')
+      .end()
     const result = await query.exec()
     if (result && !isEmpty(result)) {
       const eloquent = make<Eloquent<T>>(this.mongooseModel.modelName)
@@ -147,16 +149,18 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
   }
 
   async find(): Promise<any | null> {
-    const rawLogs: string[] = []
-    const query = this.passDataToMongooseQuery(this.getQuery(true, rawLogs), rawLogs)
+    const logger = MongooseQueryLog.create(this)
+    const query = this.passDataToMongooseQuery(this.getQuery(true, logger), logger)
     // change mongoose query operator from find to findOne if needed
     if (query['op'] === 'find') {
       query.findOne()
-      rawLogs.push('.fineOne()')
+      logger.raw('.fineOne()')
     }
 
-    rawLogs.push('.exec()')
-    this.logQuery('find', rawLogs.join(''))
+    logger
+      .raw('.exec()')
+      .action('find')
+      .end()
     const result = await (query as DocumentQuery<(Document & T) | null, Document & T>).exec()
     if (result) {
       return make<Eloquent<T>>(this.mongooseModel.modelName).newInstance(result)
@@ -184,18 +188,16 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
   async pluck(value: string): Promise<Object>
   async pluck(value: string, key: string): Promise<Object>
   async pluck(value: string, key?: string): Promise<Object> {
-    const rawLogs: string[] = []
-
+    const logger = MongooseQueryLog.create(this)
     this.selectedFields = []
     const keyName = key ? key : this.primaryKey
     this.select(value, keyName)
-    const query = this.passDataToMongooseQuery(this.getQuery(false, rawLogs), rawLogs) as DocumentQuery<
-      (Document & T)[] | null,
-      Document & T
-    >
+    const query = this.createQuery(false, logger)
 
-    rawLogs.push('.exec()')
-    this.logQuery('pluck', rawLogs.join(''))
+    logger
+      .raw('.exec()')
+      .action('pluck')
+      .end()
     const result: Array<Document & T> | null = await query.exec()
     if (result && !isEmpty(result)) {
       return result.reduce(function(memo: Object, item: Document) {
@@ -207,29 +209,27 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
   }
 
   async count(): Promise<number> {
-    const rawLogs: string[] = []
+    const logger = MongooseQueryLog.create(this).action('count')
     this.selectedFields = []
     this.select(this.primaryKey)
-    const query = this.passDataToMongooseQuery(this.getQuery(false, rawLogs), rawLogs) as DocumentQuery<
-      (Document & T)[] | null,
-      Document & T
-    >
-    rawLogs.push('.count().exec()')
-    this.logQuery('count', rawLogs.join(''))
+    const query = this.createQuery(false, logger)
+    logger.raw('.count().exec()').end()
     const result = await query.count().exec()
     return result
   }
 
   async update(data: Object): Promise<Object> {
-    const rawLogs: string[] = []
     const conditions = new MongodbConditionConverter(this.getConditions()).convert()
     const query = this.mongooseModel.update(conditions, data, {
       multi: true
     })
-    rawLogs.push(this.mongooseModel.modelName)
-    rawLogs.push(`.update(${JSON.stringify(conditions)}, ${JSON.stringify(data)}, {multi: true})`)
-    rawLogs.push('.exec()')
-    this.logQuery('update', rawLogs.join(''))
+
+    MongooseQueryLog.create(this)
+      .action('update')
+      .raw(this.mongooseModel.modelName)
+      .raw(`.update(${JSON.stringify(conditions)}, ${JSON.stringify(data)}, {multi: true})`)
+      .raw('.exec()')
+      .end()
     return <Object>query.exec()
   }
 
@@ -238,11 +238,11 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
     if (conditions === false) {
       return { n: 0, ok: 1 }
     }
-    const rawLogs: string[] = []
-    rawLogs.push(this.mongooseModel.modelName)
-    rawLogs.push(`.remove(${JSON.stringify(conditions)})`)
-    rawLogs.push('.exec()')
-    this.logQuery('delete', rawLogs.join(''))
+    MongooseQueryLog.create(this)
+      .raw(this.mongooseModel.modelName)
+      .raw('.remove(', conditions, ')', '.exec()')
+      .end()
+
     const query = this.mongooseModel.remove(conditions)
     return <Object>query.exec()
   }
@@ -255,28 +255,27 @@ export class MongooseQueryBuilder<T = {}> extends QueryBuilder
     if (conditions === false) {
       return { n: 0, nModified: 0, ok: 1 }
     }
-    const rawLogs: string[] = []
+
     const updateData = {
       $set: { [this.softDelete.deletedAt]: this.getNullValue(this.softDelete.deletedAt) }
     }
     const query = this.mongooseModel.update(conditions, updateData, { multi: true })
-    rawLogs.push(this.mongooseModel.modelName)
-    rawLogs.push('.update(')
-    rawLogs.push(JSON.stringify(conditions))
-    rawLogs.push(', ')
-    rawLogs.push(JSON.stringify(updateData))
-    rawLogs.push(', ')
-    rawLogs.push(JSON.stringify({ multi: true }))
-    rawLogs.push(').exec()')
-    this.logQuery('restore', rawLogs.join(''))
+    MongooseQueryLog.create(this)
+      .action('restore')
+      .raw(this.mongooseModel.modelName)
+      .raw('.update(', conditions, ',', updateData, ', ', { multi: true }, ')')
+      .raw('.exec()')
+      .end()
     return <Object>query.exec()
   }
 
   async execute(): Promise<any> {
-    const rawLogs: string[] = []
-    const query: any = this.getQuery(false, rawLogs)
-    rawLogs.push('.exec()')
-    this.logQuery('execute', rawLogs.join(''))
+    const logger = MongooseQueryLog.create(this)
+    const query: any = this.getQuery(false, logger)
+    logger
+      .raw('.exec()')
+      .action('execute')
+      .end()
     return query.exec()
   }
 

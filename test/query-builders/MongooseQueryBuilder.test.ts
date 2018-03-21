@@ -234,6 +234,7 @@ describe('MongooseQueryBuilder', function() {
       query['passDataToMongooseQuery'](nativeQuery)
       expect(limitSpy.notCalled).toBe(true)
     })
+
     it('passes to mongooseQuery.limit with limitNumber if .limit() was used', function() {
       const nativeQuery = UserModel.find()
       const limitSpy = Sinon.spy(nativeQuery, 'limit')
